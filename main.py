@@ -11,8 +11,9 @@ bucket = client_google_storage.get_bucket('bucket_bicycle')
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
 
-def insert_file(filename):
+def check_file(filename):
     """
+    Проверка файла в Базе, new or old
     :type filename: str
     """
     with psycopg2.connect(dbname='bservice', user='khanze') as client_psql:
@@ -30,9 +31,13 @@ def insert_file(filename):
 
 
 def get_blobs():
+    '''
+    Получение списка всех файлов
+    :return:
+    '''
     for blob in bucket.list_blobs():  # Цикл по проверке новых файлов
         filename = blob.name
-        flag_file = insert_file(blob.name)
+        flag_file = check_file(blob.name)
         if flag_file is False:
             continue
 
@@ -40,5 +45,5 @@ def get_blobs():
             csv_file.write(blob.download_as_string())
             if 'zip' in blob.name:
                 os.system('unzip {file}'.format(file=filename))
-
+    # После загрузки данных файла, нужно добавить удаление из локальной директории, чтобы не засорять память
 

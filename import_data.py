@@ -64,19 +64,26 @@ def insert_number_trips(df):
 
 
 def insert_average_duration(df):
+    '''
+    Запись средней продолжительности поездки в день
+    :param df:
+    :return:
+    '''
+
     dict_seconds_trips = {}  # {date: {seconds: int}}
     query = '''INSERT INTO new_york.average_duration(date, avg_duration) VALUES('{date}',
                {avg_duration})'''
+
     for row in df[['starttime', 'stoptime']].iterrows():
         start_datetime = datetime.datetime.strptime(row[1].array[0], '%Y-%m-%d %H:%M:%S')
         stop_datetime = datetime.datetime.strptime(row[1].array[1], '%Y-%m-%d %H:%M:%S')
         diff = start_datetime - stop_datetime
         diff_seconds = diff.seconds
-
         start_datetime_str = start_datetime.date().strftime('%Y-%m-%d')
         stop_datetime_str = stop_datetime.date().strftime('%Y-%m-%d')
 
         if start_datetime.date() == stop_datetime.date():  # Тут суммирую время поездок, которые произошли в один день
+
             if start_datetime_str in dict_seconds_trips:
                 dict_seconds_trips[start_datetime_str]['seconds'] += diff_seconds
             else:
@@ -104,8 +111,15 @@ def insert_average_duration(df):
 
 
 def insert_gender_number_trips(df):
+    '''
+    Запись кол-во поездок по гендерному признаку(так я понял условие)
+    :param df:
+    :return:
+    '''
+
     dict_gender_number_trips = {}  # {data: {gender: count int}}
     query = '''INSERT INTO new_york.gender_number_trips(date, gender, count) VALUES('{date}', {gender}, {count})'''
+
     for row in df[['starttime', 'stoptime', 'gender']].iterrows():
         array = row[1].array
         start_datetime = datetime.datetime.strptime(array[0], '%Y-%m-%d %H:%M:%S')
@@ -143,7 +157,8 @@ def insert_gender_number_trips(df):
     for trip in dict_gender_number_trips:
         for gender in dict_gender_number_trips[trip]:
             execute(query.format(date=trip, gender=gender,
-                                 count=dict_gender_number_trips[trip][gender]), connection=connection)
+                                 count=dict_gender_number_trips[trip][gender]), connection=connection)  # в pandahouse
+            # используется to_clickhouse с использование DataFrame, изучить, возможно ускорится процесс загрузки
 
     # 0 = not known,
     # 1 = male,
