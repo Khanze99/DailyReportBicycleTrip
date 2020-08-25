@@ -44,20 +44,22 @@ def insert_number_trips(df):
 
         if start_time_date_str != stop_time_date_str:  # Тут я описал кейс, когда поездка не больше 2 дней,
                                                         # то есть date : date + 1
-            if start_time_date_str in dict_count_trips:  # Таким образом я проверяю ключи в словаре
+            try:  # EAFP
                 dict_count_trips[start_time_date_str] += 1
-            else:
+            except KeyError:
                 dict_count_trips[start_time_date_str] = 1
-            if stop_time_date_str in dict_count_trips:  # Так же заодно след день идет на проверку ключа в словаре
+
+            try:
                 dict_count_trips[stop_time_date_str] += 1
-            else:
+            except KeyError:
                 dict_count_trips[stop_time_date_str] = 1
+
         elif start_time_date_str == stop_time_date_str:  # Когда поездка была в один день
-            if start_time_date_str in dict_count_trips:  # Здесь также проверка ключа,
-                                                        # возможно можно сделать это удобнее
+            try:
                 dict_count_trips[start_time_date_str] += 1
-            else:
+            except KeyError:
                 dict_count_trips[start_time_date_str] = 1
+
     for trip in dict_count_trips:  # Проход по записанным данным в словаре и запись в таблицу
         execute(query.format(date=datetime.datetime.strptime(trip, '%Y-%m-%d').date(),
                              count=dict_count_trips[trip]), connection=connection)
