@@ -1,12 +1,21 @@
+import datetime
+import os
+
+
 import pandas as pd
 from pandahouse import to_clickhouse, read_clickhouse
 from pandahouse.http import execute
-import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 connection = {'host': 'http://localhost:8123',
               'database': 'new_york',
               'user': None,
               'password': None}
+
+DATA_DIR = os.getenv('DATA_DIR')
 
 # pandahouse еще до конца не разобрался с пакетом, запрашиваю execute и пишу команды sql вручную,
 # думаю в скором времени нужно будет разобрать глубже
@@ -26,43 +35,6 @@ def create_tables():
     execute(create_dict['number_trips'], connection=connection)
     execute(create_dict['average_duration'], connection=connection)
     execute(create_dict['gender_number_trips'], connection=connection)
-
-
-def insert_number_trips(df):
-    '''
-    Запись кол-ва поездок в день
-    :param df:
-    :return:
-    '''
-    dict_count_trips = {}
-    query = '''INSERT INTO new_york.number_trips(date, count) VALUES('{date}', {count})'''
-    # Тут возможен кейс на поездку больше 24, 36, 48 часов, что возможно нужно будет поправлять
-
-    for row in df[['starttime', 'stoptime']].iterrows():
-        start_time_date_str = row[1].array[0].split(' ')[0]
-        stop_time_date_str = row[1].array[1].split(' ')[0]
-
-        if start_time_date_str != stop_time_date_str:  # Тут я описал кейс, когда поездка не больше 2 дней,
-                                                        # то есть date : date + 1
-            try:  # EAFP
-                dict_count_trips[start_time_date_str] += 1
-            except KeyError:
-                dict_count_trips[start_time_date_str] = 1
-
-            try:
-                dict_count_trips[stop_time_date_str] += 1
-            except KeyError:
-                dict_count_trips[stop_time_date_str] = 1
-
-        elif start_time_date_str == stop_time_date_str:  # Когда поездка была в один день
-            try:
-                dict_count_trips[start_time_date_str] += 1
-            except KeyError:
-                dict_count_trips[start_time_date_str] = 1
-
-    for trip in dict_count_trips:  # Проход по записанным данным в словаре и запись в таблицу
-        execute(query.format(date=datetime.datetime.strptime(trip, '%Y-%m-%d').date(),
-                             count=dict_count_trips[trip]), connection=connection)
 
 
 def insert_average_duration(df):
@@ -167,13 +139,23 @@ def insert_gender_number_trips(df):
     # 2 = female,
 
 
-def start(filename):
-    dir_file = 'data/{filename}'.format(filename=filename)
-    df = pd.read_csv(dir_file, delimiter=',')
-    create_tables()
-    insert_number_trips(df)
-    insert_average_duration(df)
-    insert_gender_number_trips(df)
+def pivot_dataset_count_numbers():
+    '''
+    Загрузка кол-ва поездок в день
+    Подсчет идет от даты начала
+    :return:
+    '''
+    data_files_list = os.listdir(DATA_DIR)  # получение списка файлов в директории
+    for file in data_files_list:  # прогоняем каждый файл и загружаем, ловим exception в случае если файл не тот
+        try:
+            city_bike_trip_df = pd.read_csv(DATA_DIR + file, compression='zip')
+        except:
+            continue
+
+        city_bike_trip_df['date'] = pd.to_datetime(city_bike_trip_df['starttime'])  # создаем новую колонку date
+        city_bike_trip_df['date'] = city_bike_trip_df['date'].dt.date  # форматируем колонку в тип данных date
+        count_trips_df = city_bike_trip_df.value_counts('date').to_frame(name='count')  # подсчет строк по колонке date
+        to_clickhouse(count_trips_df, table='number_trips', connection=connection)  # загрузка в clickhouse
 
 
-# Нужен рефактор кода, много кода, возможно не очень хорошо
+pivot_dataset_count_numbers()

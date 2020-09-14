@@ -1,0 +1,6 @@
+.env
+app.log
+credentials.json
+.idea/
+venv
+data

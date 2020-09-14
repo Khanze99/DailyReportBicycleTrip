@@ -3,7 +3,9 @@ import logging
 import psycopg2
 
 from google.cloud import storage
+from dotenv import load_dotenv
 
+load_dotenv()
 
 client_google_storage = storage.Client()
 bucket = client_google_storage.get_bucket('bucket_bicycle')
@@ -15,6 +17,8 @@ def check_file(filename):
     """
     Проверка файла в Базе, new or old
     :type filename: str
+    False - файл был использован в загрузке данных
+    True - файл не был использован в загрузке данных
     """
     with psycopg2.connect(dbname='bservice', user='khanze') as client_psql:
         cursor = client_psql.cursor()
@@ -30,9 +34,10 @@ def check_file(filename):
     return flag
 
 
-def get_blobs():
+def download_blob():
     '''
     Получение списка всех файлов
+    Загрузка в папку файлов и извлечение из zip
     :return:
     '''
     for blob in bucket.list_blobs():  # Цикл по проверке новых файлов
@@ -41,9 +46,13 @@ def get_blobs():
         if flag_file is False:
             continue
 
-        with open('{}'.format(filename), mode='wb') as csv_file:
+        with open('data/{}'.format(filename), mode='wb') as csv_file:
             csv_file.write(blob.download_as_string())
-            if 'zip' in blob.name:
-                os.system('unzip {file}'.format(file=filename))
     # После загрузки данных файла, нужно добавить удаление из локальной директории, чтобы не засорять память
+
+
+# 1. удаление после использования
+# 2. обернуть в airflow
+# 3. message in telegram
+# 4. docker-compose
 
