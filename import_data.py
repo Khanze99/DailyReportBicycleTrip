@@ -25,11 +25,6 @@ CREATE_TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.num
                                          gender UInt8, count UInt64) ENGINE=MergeTree(date, (date), 8192)'''}
 
 
-# 0 = not known,
-# 1 = male,
-# 2 = female,
-
-
 def pivot_dataset_count_numbers():
     '''
     Загрузка кол-ва поездок в день
@@ -94,7 +89,5 @@ def pivot_dataset_trip_gender():
         df['date'] = pd.to_datetime(df['starttime'])
         df['date'] = df['date'].dt.date
         df_gender = df.groupby(['gender', 'date'])['tripduration'].agg(count='count')
+
         to_clickhouse(df_gender, table='gender_number_trips', connection=connection)
-
-
-pivot_dataset_trip_gender()
