@@ -16,9 +16,6 @@ connection = {'host': 'http://localhost:8123',
 
 DATA_DIR = os.getenv('DATA_DIR')
 
-# pandahouse еще до конца не разобрался с пакетом, запрашиваю execute и пишу команды sql вручную,
-# думаю в скором времени нужно будет разобрать глубже
-
 
 CREATE_TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.number_trips (date Date, count UInt64) 
                                   ENGINE=MergeTree(date, (date), 8192)''',
@@ -78,3 +75,26 @@ def pivot_dataset_average_trip_duration():
         df_date_avg = df_count_sum_trips[['avg_duration']]
 
         to_clickhouse(df_date_avg, table='average_duration', connection=connection)
+
+
+def pivot_dataset_trip_gender():
+    '''
+    Распределение поездок пользователей по категории "gender"
+    :return:
+    '''
+
+    data_files_list = os.listdir(DATA_DIR)
+
+    for file in data_files_list:
+        try:
+            df = pd.read_csv(DATA_DIR + file, compression='zip')
+        except:
+            continue
+
+        df['date'] = pd.to_datetime(df['starttime'])
+        df['date'] = df['date'].dt.date
+        df_gender = df.groupby(['gender', 'date'])['tripduration'].agg(count='count')
+        to_clickhouse(df_gender, table='gender_number_trips', connection=connection)
+
+
+pivot_dataset_trip_gender()
