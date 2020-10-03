@@ -77,7 +77,6 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         python_callable=pivot_dataset_average_trip_duration,
         dag=dag
     )
-    pivot_average_duration >> pivot_number_trips
 
 # 2. обернуть в airflow
 # 3. message in telegram
