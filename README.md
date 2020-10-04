@@ -26,6 +26,7 @@
 
 Таким образом, `ReplacingMergeTree` подходит для фоновой чистки дублирующихся данных в целях экономии места, но не даёт гарантии отсутствия дубликатов.
 https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/replacingmergetree/
+Еще нашел такое решение кейса, перед загрузкой в `clickhouse` убрать дубликаты в `apache cassandra`
 
 **II этап**
 
