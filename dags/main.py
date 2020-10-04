@@ -5,10 +5,10 @@ import datetime as dt
 
 from google.cloud import storage
 from dotenv import load_dotenv
-from airflow.models import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.models import DAG
 
-from import_data import pivot_dataset_average_trip_duration, pivot_dataset_count_numbers, pivot_dataset_trip_gender
+from import_data import pivot_dataset_count_numbers, pivot_dataset_average_trip_duration, pivot_dataset_trip_gender
 
 args = {
     'owner': 'airflow',
@@ -25,7 +25,7 @@ client_google_storage = storage.Client()
 bucket = client_google_storage.get_bucket('bucket_bicycle')
 DATA_DIR = os.getenv('DATA_DIR')
 
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(filename='../app.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
 
 def remove_files():
@@ -78,7 +78,10 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         dag=dag
     )
 
-# 2. обернуть в airflow
-# 3. message in telegram
-# 4. docker-compose
+    pivot_gender_trip = PythonOperator(
+        task_id='pivot_dataset_trip_gender',
+        python_callable=pivot_dataset_trip_gender,
+        dag=dag
+    )
 
+    pivot_number_trips >> pivot_average_duration >> pivot_gender_trip

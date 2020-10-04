@@ -16,11 +16,11 @@ DATA_DIR = os.getenv('DATA_DIR')
 
 
 CREATE_TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.number_trips (date Date, count UInt64) 
-                                  ENGINE=MergeTree(date, (date), 8192)''',
+                                  ENGINE=ReplacingMergeTree(date, (date), 8192)''',
                       'average_duration': '''CREATE TABLE IF NOT EXISTS new_york.average_duration (date Date, 
-                                      avg_duration Float64) ENGINE=MergeTree(date, (date), 8192)''',
+                                      avg_duration Float64) ENGINE=ReplacingMergeTree(date, (date), 8192)''',
                       'gender_number_trips': '''CREATE TABLE IF NOT EXISTS new_york.gender_number_trips (date Date,
-                                         gender UInt8, count UInt64) ENGINE=MergeTree(date, (date), 8192)'''}
+                                         gender UInt8, count UInt64) ENGINE=ReplacingMergeTree(date, (date), 8192)'''}
 
 
 def pivot_dataset_count_numbers():
