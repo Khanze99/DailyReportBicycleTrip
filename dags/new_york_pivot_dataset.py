@@ -2,10 +2,11 @@ import datetime as dt
 import os
 import logging
 import psycopg2
+import re
 
 from google.cloud import storage
 import pandas as pd
-from pandahouse import to_clickhouse
+from pandahouse import to_clickhouse, read_clickhouse
 from dotenv import load_dotenv
 from airflow.operators.python_operator import PythonOperator
 from airflow.models import DAG
@@ -31,15 +32,16 @@ connection = {'host': 'http://localhost:8123',
 DATA_DIR = os.getenv('DATA_DIR')
 
 
-CREATE_TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.number_trips (date Date, count UInt64) 
+TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.number_trips (date Date, count UInt64) 
                                   ENGINE=ReplacingMergeTree(date, (date), 8192)''',
-                      'average_duration': '''CREATE TABLE IF NOT EXISTS new_york.average_duration (date Date, 
-                                      avg_duration Float64) ENGINE=ReplacingMergeTree(date, (date), 8192)''',
-                      'gender_number_trips': '''CREATE TABLE IF NOT EXISTS new_york.gender_number_trips (date Date,
-                                         gender UInt8, count UInt64) ENGINE=ReplacingMergeTree(date, (date), 8192)'''}
+               'average_duration': '''CREATE TABLE IF NOT EXISTS new_york.average_duration (date Date, 
+                              avg_duration Float64) ENGINE=ReplacingMergeTree(date, (date), 8192)''',
+               'gender_number_trips': '''CREATE TABLE IF NOT EXISTS new_york.gender_number_trips (date Date,
+                                 gender UInt8, count UInt64) ENGINE=ReplacingMergeTree(date, (date), 8192)'''}
 
 client_google_storage = storage.Client()
-bucket = client_google_storage.get_bucket('bucket_bicycle')
+bucket_bicycle = client_google_storage.get_bucket('bucket_bicycle')
+bucket_for_statistics = client_google_storage.get_bucket('bucket_for_statistics')
 
 logging.basicConfig(filename='../app.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -47,7 +49,6 @@ logging.basicConfig(filename='../app.log', level=logging.INFO, format='%(asctime
 def remove_files():
     '''
     Удаление файлов
-    "Если пригодится"
     :return:
     '''
     list_files = os.listdir(DATA_DIR)
@@ -55,12 +56,38 @@ def remove_files():
         os.remove(DATA_DIR + file)
 
 
+def send_statistics():
+    pattern = r'([0-9]+)'
+    files = os.listdir(DATA_DIR)
+    for file in files:
+        date_str = re.search(pattern, file).group()
+        date = dt.datetime.strptime(date_str, '%Y%m')
+
+        try:
+            date_next_month = date.replace(month=date.month+1)
+        except ValueError:
+            if date.month == 12:
+                date_next_month = date.replace(year=date.year+1, month=1)
+            else:
+                raise
+        query = '''
+            SELECT * FROM new_york.{table} WHERE (date >= toDate('{date}')) and (date < toDate('{date_next_month}'))
+        '''
+
+        for table in TABLES_DICT:
+            query = query.format(table=table, date=date, date_next_month=date_next_month)
+            df = read_clickhouse(query, index='date', connection=connection)
+            filename = f'Statistics-{file}'
+            blob = bucket_for_statistics.blob(filename)
+            blob.upload_from_string(df.to_string(index=False, justify='left'), content_type='text/csv')
+
+
 def check_and_download_files():
     '''
     Получение списка всех файлов
     :return:
     '''
-    for blob in bucket.list_blobs():  # Цикл по проверке новых файлов
+    for blob in bucket_bicycle.list_blobs():  # Цикл по проверке новых файлов
         filename = blob.name
         flag_file = False
         with psycopg2.connect(dbname='bservice', user='khanze') as client_psql:
@@ -79,7 +106,6 @@ def check_and_download_files():
 
         with open('data/{}'.format(filename), mode='wb') as csv_file:
             csv_file.write(blob.download_as_string())
-
 
 
 def pivot_dataset_count_numbers():
@@ -174,5 +200,11 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         dag=dag
     )
 
-    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips]
+    send_statistics_task = PythonOperator(
+        task_id='send_statistics',
+        python_callable=send_statistics,
+        dag=dag
 
+    )
+
+    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> send_statistics_task
