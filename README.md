@@ -43,3 +43,7 @@ https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/replacing
 * Создать функцию, которая будет выгружать статистику в специальный бакет на облаке с хранящимися отчетами по загруженным файлам
 * Обернуть в docker-compose
 
+
+**Архитектура работы цепочки алгоритма**
+
+![Architecture](airflow_app.png)

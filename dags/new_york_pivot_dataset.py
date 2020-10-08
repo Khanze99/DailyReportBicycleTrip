@@ -43,7 +43,13 @@ client_google_storage = storage.Client()
 bucket_bicycle = client_google_storage.get_bucket('bucket_bicycle')
 bucket_for_statistics = client_google_storage.get_bucket('bucket_for_statistics')
 
+
 logging.basicConfig(filename='../app.log', level=logging.INFO, format='%(asctime)s %(message)s')
+
+
+def create_buckets():
+    client_google_storage.create_bucket('bucket_bicycle')
+    client_google_storage.create_bucket('bucket_for_statistics')
 
 
 def remove_files():
@@ -80,6 +86,12 @@ def send_statistics():
             filename = f'Statistics-{file}'
             blob = bucket_for_statistics.blob(filename)
             blob.upload_from_string(df.to_string(index=False, justify='left'), content_type='text/csv')
+
+
+def set_status_is_download():
+    files = os.listdir(DATA_DIR)
+    for file in files:
+        pass
 
 
 def check_and_download_files():
@@ -182,6 +194,7 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         python_callable=check_and_download_files,
         dag=dag
     )
+
     pivot_number_trips = PythonOperator(
         task_id='pivot_dataset_count_numbers',
         python_callable=pivot_dataset_count_numbers,
