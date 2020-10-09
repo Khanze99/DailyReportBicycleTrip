@@ -72,7 +72,7 @@ def send_statistics():
 
         with psycopg2.connect(**connection_psql) as client_psql:
             cursor = client_psql.cursor()
-            cursor.execute(f'''SELECT is_download FROM file_bucket where name='{file}' ''')
+            cursor.execute(f'''SELECT is_download FROM file_bucket where name='{file}'; ''')
             is_download = cursor.fetchall()[0][0]
             if is_download is False:
                 continue
@@ -88,7 +88,7 @@ def send_statistics():
             else:
                 raise
         query = '''
-            SELECT * FROM new_york.{table} WHERE (date >= toDate('{date}')) and (date < toDate('{date_next_month}'))
+            SELECT * FROM new_york.{table} WHERE (date >= toDate('{date}')) and (date < toDate('{date_next_month}'));
         '''
 
         for table in TABLES_DICT:
@@ -97,7 +97,7 @@ def send_statistics():
             filename = file.split('.')[0]
             statistic_filename = f'Statistics-{table}-{filename}.csv'
             blob = bucket_for_statistics.blob(statistic_filename)
-            blob.upload_from_string(df.to_string(index=False, justify='left'), content_type='text/csv')
+            blob.upload_from_string(df.to_string(index=False), content_type='text/csv')
 
 
 def set_status_is_download():
