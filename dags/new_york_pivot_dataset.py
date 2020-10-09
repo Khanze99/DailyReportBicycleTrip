@@ -24,10 +24,13 @@ args = {
 load_dotenv()
 
 
-connection = {'host': 'http://localhost:8123',
-              'database': 'new_york',
-              'user': None,
-              'password': None}
+connection_clickhouse = {'host': 'http://localhost:8123',
+                         'database': 'new_york',
+                         'user': None,
+                         'password': None}
+
+connection_psql = {'dbname': 'bservice',
+                   'user': 'khanze'}
 
 DATA_DIR = os.getenv('DATA_DIR')
 
@@ -66,6 +69,14 @@ def send_statistics():
     pattern = r'([0-9]+)'
     files = os.listdir(DATA_DIR)
     for file in files:
+
+        with psycopg2.connect(**connection_psql) as client_psql:
+            cursor = client_psql.cursor()
+            cursor.execute(f'''SELECT is_download FROM file_bucket where name='{file}' ''')
+            is_download = cursor.fetchall()[0][0]
+            if is_download is False:
+                continue
+
         date_str = re.search(pattern, file).group()
         date = dt.datetime.strptime(date_str, '%Y%m')
 
@@ -82,16 +93,27 @@ def send_statistics():
 
         for table in TABLES_DICT:
             query = query.format(table=table, date=date, date_next_month=date_next_month)
-            df = read_clickhouse(query, index='date', connection=connection)
-            filename = f'Statistics-{file}'
-            blob = bucket_for_statistics.blob(filename)
+            df = read_clickhouse(query, index='date', connection=connection_clickhouse)
+            filename = file.split('.')[0]
+            statistic_filename = f'Statistics-{table}-{filename}.csv'
+            blob = bucket_for_statistics.blob(statistic_filename)
             blob.upload_from_string(df.to_string(index=False, justify='left'), content_type='text/csv')
 
 
 def set_status_is_download():
     files = os.listdir(DATA_DIR)
     for file in files:
-        pass
+        with psycopg2.connect(**connection_psql) as client_psql:
+            try:
+                cursor = client_psql.cursor()
+                cursor.execute(f'''update file_bucket 
+                                   set is_download=True 
+                                   where name='{file}' and (loaded_count_trips=true and 
+                                                            loaded_average_trip_duration=true and 
+                                                            loaded_trip_gender=true);''')
+                logging.info('file is download')
+            except (Exception, psycopg2.DatabaseError) as error:
+                logging.error(error)
 
 
 def check_and_download_files():
@@ -102,7 +124,7 @@ def check_and_download_files():
     for blob in bucket_bicycle.list_blobs():  # Цикл по проверке новых файлов
         filename = blob.name
         flag_file = False
-        with psycopg2.connect(dbname='bservice', user='khanze') as client_psql:
+        with psycopg2.connect(**connection_psql) as client_psql:
             cursor = client_psql.cursor()
             # Пометить файл в базу данных
             try:
@@ -127,7 +149,6 @@ def pivot_dataset_count_numbers():
     :return:
     '''
     data_files_list = os.listdir(DATA_DIR)
-
     for file in data_files_list:
         try:
             df = pd.read_csv(DATA_DIR + file, compression='zip')
@@ -138,7 +159,15 @@ def pivot_dataset_count_numbers():
         df['date'] = df['date'].dt.date  # форматируем колонку в тип данных date
         df = df.value_counts('date').to_frame(name='count')  # подсчет строк по колонке date и форматируем в DataFrame
 
-        to_clickhouse(df, table='number_trips', connection=connection)  # загрузка в clickhouse
+        to_clickhouse(df, table='number_trips', connection=connection_clickhouse)  # загрузка в clickhouse
+
+        with psycopg2.connect(**connection_psql) as client_psql:
+            try:
+                cursor = client_psql.cursor()
+                cursor.execute(f'''update file_bucket set loaded_count_trips=True where name='{file}';''')
+                logging.info('number trips loaded')
+            except (Exception, psycopg2.DatabaseError) as error:
+                logging.error(error)
 
 
 def pivot_dataset_average_trip_duration():
@@ -164,7 +193,15 @@ def pivot_dataset_average_trip_duration():
         df_count_sum_trips['avg_duration'] = df_count_sum_trips['sum_trip_seconds'] / df_count_sum_trips['count_trips']
         df_date_avg = df_count_sum_trips[['avg_duration']]
 
-        to_clickhouse(df_date_avg, table='average_duration', connection=connection)
+        to_clickhouse(df_date_avg, table='average_duration', connection=connection_clickhouse)
+
+        with psycopg2.connect(**connection_psql) as client_psql:
+            try:
+                cursor = client_psql.cursor()
+                cursor.execute(f'''update file_bucket set loaded_average_trip_duration=True where name='{file}';''')
+                logging.info('average duration loaded')
+            except (Exception, psycopg2.DatabaseError) as error:
+                logging.error(error)
 
 
 def pivot_dataset_trip_gender():
@@ -185,7 +222,15 @@ def pivot_dataset_trip_gender():
         df['date'] = df['date'].dt.date
         df_gender = df.groupby(['gender', 'date'])['tripduration'].agg(count='count')
 
-        to_clickhouse(df_gender, table='gender_number_trips', connection=connection)
+        to_clickhouse(df_gender, table='gender_number_trips', connection=connection_clickhouse)
+
+        with psycopg2.connect(**connection_psql) as client_psql:
+            try:
+                cursor = client_psql.cursor()
+                cursor.execute(f'''update file_bucket set loaded_trip_gender=True where name='{file}';''')
+                logging.info('gender trips loaded')
+            except (Exception, psycopg2.DatabaseError) as error:
+                logging.error(error)
 
 
 with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=None) as dag:
@@ -217,7 +262,12 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         task_id='send_statistics',
         python_callable=send_statistics,
         dag=dag
-
     )
 
-    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> send_statistics_task
+    set_status = PythonOperator(
+        task_id='set_status_is_download',
+        python_callable=set_status_is_download,
+        dag=dag
+    )
+
+    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> set_status >> send_statistics_task
