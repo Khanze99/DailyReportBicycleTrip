@@ -3,6 +3,7 @@ import os
 import logging
 import psycopg2
 import re
+import requests
 
 from google.cloud import storage
 import pandas as pd
@@ -10,7 +11,6 @@ from pandahouse import to_clickhouse, read_clickhouse
 from dotenv import load_dotenv
 from airflow.operators.python_operator import PythonOperator
 from airflow.models import DAG
-
 
 args = {
     'owner': 'airflow',
@@ -23,7 +23,6 @@ args = {
 
 load_dotenv()
 
-
 connection_clickhouse = {'host': 'http://localhost:8123',
                          'database': 'new_york',
                          'user': None,
@@ -33,7 +32,6 @@ connection_psql = {'dbname': 'bservice',
                    'user': 'khanze'}
 
 DATA_DIR = os.getenv('DATA_DIR')
-
 
 TABLES_DICT = {'number_trips': '''CREATE TABLE IF NOT EXISTS new_york.number_trips (date Date, count UInt64) 
                                   ENGINE=ReplacingMergeTree(date, (date), 8192)''',
@@ -46,6 +44,8 @@ client_google_storage = storage.Client()
 bucket_bicycle = client_google_storage.get_bucket('bucket_bicycle')
 bucket_for_statistics = client_google_storage.get_bucket('bucket_for_statistics')
 
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_URL = 'https://api.telegram.org/bot{token}'.format(token=TELEGRAM_TOKEN)
 
 logging.basicConfig(filename='../app.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -81,10 +81,10 @@ def send_statistics():
         date = dt.datetime.strptime(date_str, '%Y%m')
 
         try:
-            date_next_month = date.replace(month=date.month+1)
+            date_next_month = date.replace(month=date.month + 1)
         except ValueError:
             if date.month == 12:
-                date_next_month = date.replace(year=date.year+1, month=1)
+                date_next_month = date.replace(year=date.year + 1, month=1)
             else:
                 raise
         query = '''
@@ -98,6 +98,18 @@ def send_statistics():
             statistic_filename = f'Statistics-{table}-{filename}.csv'
             blob = bucket_for_statistics.blob(statistic_filename)
             blob.upload_from_string(df.to_string(index=False), content_type='text/csv')
+
+
+def send_notifications():
+    with psycopg2.connect(**connection_psql) as client_psql:
+        cursor = client_psql.cursor()
+        cursor.execute('select name from file_bucket where is_notify=false;')
+        result = cursor.fetchall()
+
+        for file in result:
+            requests.post(TELEGRAM_URL + '/sendMessage', params={'chat_id': os.getenv('CHAT_ID'),
+                                                                 'text': '{file} was loaded 😅'.format(file=file[0])
+                                                                 })
 
 
 def set_status_is_download():
