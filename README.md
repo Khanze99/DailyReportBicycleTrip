@@ -49,10 +49,14 @@ https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/replacing
 **Что осталось?**
 
 * Логирование Airflow
-* Периодическая проверка файлов(если есть новые то запускаем полностью pipeline)
 * Обернуть в docker-compose
 
 
 **Архитектура работы цепочки алгоритма**
 
 ![Architecture](airflow_app.png)
+
+
+**Обновленная архитектура**
+
+![New Architecture](airflow_app_new.png)
