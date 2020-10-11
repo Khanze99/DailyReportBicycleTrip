@@ -113,8 +113,6 @@ def send_notifications():
             if result['ok']:
                 cursor.execute(f'''update file_bucket set is_notify=True where name='{file[0]}';''')
 
-send_notifications()
-
 
 def set_status_is_download():
     files = os.listdir(DATA_DIR)
