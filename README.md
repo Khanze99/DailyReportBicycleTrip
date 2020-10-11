@@ -37,9 +37,7 @@ https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/replacing
 
 Дальше нужно будет сделать:
 
-* refactor кода в месте где конвертируется дата
 * Периодическая проверка файлов(если есть новые то запускаем полностью pipeline)
-* Создать функцию, которая будет уведомлять о готовности файла в мессенджерах
 * Обернуть в docker-compose
 
 

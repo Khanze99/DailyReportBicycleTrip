@@ -104,12 +104,16 @@ def send_notifications():
     with psycopg2.connect(**connection_psql) as client_psql:
         cursor = client_psql.cursor()
         cursor.execute('select name from file_bucket where is_notify=false;')
-        result = cursor.fetchall()
+        result_psql = cursor.fetchall()
 
-        for file in result:
-            requests.post(TELEGRAM_URL + '/sendMessage', params={'chat_id': os.getenv('CHAT_ID'),
-                                                                 'text': '{file} was loaded 😅'.format(file=file[0])
-                                                                 })
+        for file in result_psql:
+            result = requests.post(TELEGRAM_URL + '/sendMessage', params={'chat_id': os.getenv('CHAT_ID'),
+                                                                          'text': '{file} was loaded 😅'.format(file=file[0])
+                                                                          }).json()
+            if result['ok']:
+                cursor.execute(f'''update file_bucket set is_notify=True where name='{file[0]}';''')
+
+send_notifications()
 
 
 def set_status_is_download():
@@ -195,10 +199,9 @@ def pivot_dataset_average_trip_duration():
         except:
             continue
 
-        df['date'] = pd.to_datetime(df['starttime'])
-        df['date'] = df['date'].dt.date
         df['starttime'] = pd.to_datetime(df['starttime'])
         df['stoptime'] = pd.to_datetime(df['stoptime'])
+        df['date'] = df['starttime'].dt.date
         df['trip seconds'] = df['stoptime'] - df['starttime']
         df['trip seconds'] = df['trip seconds'].dt.total_seconds()
         df_count_sum_trips = df.groupby('date')['trip seconds'].agg(count_trips='count', sum_trip_seconds='sum')
@@ -282,4 +285,10 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         dag=dag
     )
 
-    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> set_status >> send_statistics_task
+    send_notification = PythonOperator(
+        task_id='send_notifications',
+        python_callable=send_notifications,
+        dag=dag
+    )
+
+    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> set_status >> send_statistics_task >> send_notification
