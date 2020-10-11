@@ -11,6 +11,7 @@ from pandahouse import to_clickhouse, read_clickhouse
 from dotenv import load_dotenv
 from airflow.operators.python_operator import PythonOperator
 from airflow.models import DAG
+from airflow.operators.python_operator import BranchPythonOperator
 
 args = {
     'owner': 'airflow',
@@ -18,7 +19,6 @@ args = {
     'retries': 1,
     'retry_delay': dt.timedelta(minutes=1),
     'depends_on_past': False,
-
 }
 
 load_dotenv()
@@ -130,32 +130,6 @@ def set_status_is_download():
                 logging.error(error)
 
 
-def check_and_download_files():
-    '''
-    Получение списка всех файлов
-    :return:
-    '''
-    for blob in bucket_bicycle.list_blobs():  # Цикл по проверке новых файлов
-        filename = blob.name
-        flag_file = False
-        with psycopg2.connect(**connection_psql) as client_psql:
-            cursor = client_psql.cursor()
-            # Пометить файл в базу данных
-            try:
-                cursor.execute('''INSERT INTO file_bucket (name) VALUES ('{filename}');'''.format(filename=filename))
-                logging.info('{filename} file is written to the database'.format(filename=filename))
-                flag_file = True
-            except psycopg2.Error as e:
-                error = e.pgerror
-                logging.error('PSQL: {}'.format(error))
-
-        if flag_file is False:
-            continue
-
-        with open('data/{}'.format(filename), mode='wb') as csv_file:
-            csv_file.write(blob.download_as_string())
-
-
 def pivot_dataset_count_numbers():
     '''
     Загрузка кол-ва поездок в день
@@ -246,7 +220,46 @@ def pivot_dataset_trip_gender():
                 logging.error(error)
 
 
-with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=None) as dag:
+def check_and_download_files():
+    '''
+    Получение списка всех файлов
+    :return:
+    '''
+    for blob in bucket_bicycle.list_blobs():  # Цикл по проверке новых файлов
+        filename = blob.name
+        flag_file = False
+        with psycopg2.connect(**connection_psql) as client_psql:
+            cursor = client_psql.cursor()
+            # Пометить файл в базу данных
+            try:
+                cursor.execute('''INSERT INTO file_bucket (name) VALUES ('{filename}');'''.format(filename=filename))
+                logging.info('{filename} file is written to the database'.format(filename=filename))
+                flag_file = True
+            except psycopg2.Error as e:
+                error = e.pgerror
+                # logging.error('PSQL: {}'.format(error))
+
+        if flag_file is False:
+            continue
+
+        with open('data/{}'.format(filename), mode='wb') as csv_file:
+            csv_file.write(blob.download_as_string())
+
+
+def branching_task(**context):
+    files = os.listdir(DATA_DIR)
+
+    if len(files) >= 1:
+        return ['pivot_dataset_count_numbers', 'pivot_dataset_average_trip_duration', 'pivot_dataset_trip_gender']
+
+    return 'plug'
+
+
+def drown_pipeline():
+    logging.info('No files to download')
+
+
+with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval='@daily') as dag:
     check_files = PythonOperator(
         task_id='check_and_download_files',
         python_callable=check_and_download_files,
@@ -289,4 +302,24 @@ with DAG(dag_id='new_york_dataset_pivot', default_args=args, schedule_interval=N
         dag=dag
     )
 
-    check_files >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> set_status >> send_statistics_task >> send_notification
+    branching = BranchPythonOperator(
+        task_id='branching',
+        provide_context=True,
+        python_callable=branching_task
+    )
+
+    plug = PythonOperator(
+        task_id='plug',
+        python_callable=drown_pipeline,
+        dag=dag
+    )
+
+    remove = PythonOperator(
+        task_id='remove_files',
+        python_callable=remove_files,
+        dag=dag
+    )
+
+    check_files >> branching
+    branching >> [pivot_gender_trip, pivot_average_duration, pivot_number_trips] >> set_status >> send_statistics_task >> send_notification >> remove
+    branching >> plug
