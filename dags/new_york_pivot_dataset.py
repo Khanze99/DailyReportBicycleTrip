@@ -237,7 +237,7 @@ def check_and_download_files():
                 flag_file = True
             except psycopg2.Error as e:
                 error = e.pgerror
-                # logging.error('PSQL: {}'.format(error))
+                logging.error('PSQL: {}'.format(error))
 
         if flag_file is False:
             continue
